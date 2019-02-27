@@ -53,8 +53,7 @@ if not shutil.which("ffprobe"):
     sys.exit(1)
 
 import os
-
-if not os.environ["DISPLAY"]:
+if not 'DISPLAY' in os.environ:
     matplot.switch_backend('Agg')
 
 # get list of supported matplotlib formats
