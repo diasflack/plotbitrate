@@ -1,6 +1,20 @@
 PlotBitrate
 ===========
 
+****
+
+from diasflack
+
+ok, so I made few changes to make plotbitrate closer to bitrate viewer.
+
+1) changed (frame size / sec) to actuall (bitrate / sec). So, now it has accurate bitrate.
+
+2) changed lines to bars.
+
+3) deleted audio stream cause I don't need it.
+
+****
+
 FFProbe Bitrate Graph
 
 This project contains a script for plotting the bitrate of an audio or video
