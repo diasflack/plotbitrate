@@ -52,6 +52,11 @@ if not shutil.which("ffprobe"):
     sys.stderr.write("Error: Missing ffprobe from package 'ffmpeg'\n")
     sys.exit(1)
 
+import os
+
+if not os.environ["DISPLAY"]:
+    matplot.switch_backend('Agg')
+
 # get list of supported matplotlib formats
 format_list = list(
     matplot.figure().canvas.get_supported_filetypes().keys())
