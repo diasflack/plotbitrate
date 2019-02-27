@@ -61,8 +61,7 @@ matplot.close()  # destroy test figure
 parser = argparse.ArgumentParser(
     description="Graph bitrate for audio/video stream")
 parser.add_argument('input', help="input file/stream", metavar="INPUT")
-parser.add_argument('-s', '--stream', help="stream type",
-    choices=["audio", "video"], default="video")
+
 parser.add_argument('-o', '--output', help="output file")
 parser.add_argument('-f', '--format', help="output file format",
     choices=format_list)
@@ -80,19 +79,13 @@ if args.min and args.max and (args.min >= args.max):
     sys.stderr.write("Error: Maximum should be greater than minimum\n")
     sys.exit(1)
 
-bitrate_data = {}
+bitrate_data = []
 frame_count = 0
 frame_bitrate = 0
 frame_rate = None
 frame_time = 0.0
 
-# set ffprobe stream specifier
-if args.stream == 'audio':
-    stream_spec = 'a'
-elif args.stream == 'video':
-    stream_spec = 'V'
-else:
-    raise RuntimeError("Invalid stream type")
+stream_spec = 'V'
 
 # get frame data for the selected stream
 with subprocess.Popen(
@@ -116,40 +109,27 @@ with subprocess.Popen(
         # count number of frames
         frame_count += 1
 
-        # get type of frame
-        if args.stream == 'audio':
-            frame_type = 'A'  # pseudo frame type
-        else:
-            frame_type = node.get('pict_type')
-
         # get frame rate only once (assumes non-variable framerate)
         # TODO: use 'pkt_duration_time' each time instead
         if frame_rate is None:
+            with subprocess.Popen(
+                ["ffprobe",
+                    "-show_entries", "stream",
+                    "-select_streams", "V",
+                    "-print_format", "xml",
+                    args.input
+                ],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL) as proc_stream:
 
-            # audio frame rate, 1 / frame duration
-            if args.stream == 'audio':
-                frame_rate = 1.0 / float(node.get('pkt_duration_time'))
+                # parse stream header xml
+                stream_data = etree.parse(proc_stream.stdout)
+                stream_elem = stream_data.find('.//stream')
 
-            # video frame rate, read stream header
-            else:
-                with subprocess.Popen(
-                    ["ffprobe",
-                        "-show_entries", "stream",
-                        "-select_streams", "V",
-                        "-print_format", "xml",
-                        args.input
-                    ],
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.DEVNULL) as proc_stream:
-
-                    # parse stream header xml
-                    stream_data = etree.parse(proc_stream.stdout)
-                    stream_elem = stream_data.find('.//stream')
-
-                    # compute frame rate from ratio
-                    frame_rate_ratio = stream_elem.get('avg_frame_rate')
-                    (dividend, divisor) = frame_rate_ratio.split('/')
-                    frame_rate = float(dividend) / float(divisor)
+                # compute frame rate from ratio
+                frame_rate_ratio = stream_elem.get('avg_frame_rate')
+                (dividend, divisor) = frame_rate_ratio.split('/')
+                frame_rate = float(dividend) / float(divisor)
 
         #
         # frame time (x-axis):
@@ -183,16 +163,12 @@ with subprocess.Popen(
         frame = (frame_time, frame_bitrate)
         frame_bitrate = 0
 
-        # create new frame list if new type
-        if frame_type not in bitrate_data:
-            bitrate_data[frame_type] = []
-
         # append frame to list by type
-        bitrate_data[frame_type].append(frame)
+        bitrate_data.append(frame)
 
     if frame_bitrate != 0:
     	frame = (frame_time, frame_bitrate)
-    	bitrate_data[frame_type].append(frame)    
+    	bitrate_data.append(frame)    
 
     # check if ffprobe was successful
     if frame_count == 0:
@@ -205,53 +181,27 @@ with subprocess.Popen(
 matplot.figure().canvas.set_window_title(args.input)
 matplot.title("Stream Bitrate vs Time")
 matplot.xlabel("Time (sec)")
-matplot.ylabel("Frame Bitrate (kbit/s)")
+matplot.ylabel("Bitrate (kbit/s)")
 matplot.grid(True)
-
-# map frame type to color
-frame_type_color = {
-    # audio
-    'A': 'red',
-    # video
-    'I': 'red',
-    'P': 'green',
-    'B': 'blue'
-}
 
 global_peak_bitrate = 0.0
 global_mean_bitrate = 0.0
 
 # render charts in order of expected decreasing size
-for frame_type in ['I', 'P', 'B', 'A']:
 
-    # skip frame type if missing
-    if frame_type not in bitrate_data:
-        continue
+# convert list of tuples to numpy 2d array
+frame_array = numpy.array(bitrate_data)
 
-    # convert list of tuples to numpy 2d array
-    frame_list = bitrate_data[frame_type]
-    frame_array = numpy.array(frame_list)
+# update global peak bitrate
+peak_bitrate = frame_array.max(0)[1]
+if peak_bitrate > global_peak_bitrate:
+    global_peak_bitrate = peak_bitrate
 
-    # update global peak bitrate
-    peak_bitrate = frame_array.max(0)[1]
-    if peak_bitrate > global_peak_bitrate:
-        global_peak_bitrate = peak_bitrate
-
-    # update global mean bitrate (using piecewise mean)
-    mean_bitrate = frame_array.mean(0)[1]
-    global_mean_bitrate += mean_bitrate * (len(frame_list) / (frame_count / frame_rate))
-
-    # plot chart using gnuplot-like impulses
-    # matplot.vlines(
-    #     frame_array[:,0] - 0.5, [0], frame_array[:,1],
-    #     color=frame_type_color[frame_type],
-    #     linewidth=1,
-    #     label="{} Frames".format(frame_type))
-
-frame_array = numpy.array(bitrate_data['P'])
+# update global mean bitrate (using piecewise mean)
+mean_bitrate = frame_array.mean(0)[1]
+global_mean_bitrate += mean_bitrate * (len(bitrate_data) / (frame_count / frame_rate))
 
 bar_width = 1
-
 opacity = 0.65
 
 rects = matplot.bar(frame_array[:,0] - 0.5, frame_array[:,1], bar_width,
