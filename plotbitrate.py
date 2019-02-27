@@ -204,7 +204,9 @@ global_mean_bitrate += mean_bitrate * (len(bitrate_data) / (frame_count / frame_
 bar_width = 1
 opacity = 0.65
 
-rects = matplot.bar(frame_array[:,0] - 0.5, frame_array[:,1], bar_width,
+index = numpy.arange(len(frame_array))
+
+rects = matplot.bar(index + 0.5, frame_array[:,1], bar_width,
                 alpha=opacity, color='r')
 
 # set y-axis limits if requested
