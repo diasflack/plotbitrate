@@ -82,6 +82,7 @@ if args.min and args.max and (args.min >= args.max):
 
 bitrate_data = {}
 frame_count = 0
+frame_bitrate = 0
 frame_rate = None
 frame_time = 0.0
 
@@ -172,10 +173,15 @@ with subprocess.Popen(
                 frame_time = float(node.get('pkt_pts_time'))
             except:
                 if frame_count > 1:
-                    frame_time += float(node.get('pkt_duration_time'))
+                    frame_time += float(node.get('pkt_duration_time'))       
 
-        frame_bitrate = (float(node.get('pkt_size')) * 8 / 1000) * frame_rate
+        frame_bitrate += (float(node.get('pkt_size')) * 8 / 1000)
+
+        if frame_count % frame_rate != 0:
+        	continue
+
         frame = (frame_time, frame_bitrate)
+        frame_bitrate = 0
 
         # create new frame list if new type
         if frame_type not in bitrate_data:
@@ -183,6 +189,10 @@ with subprocess.Popen(
 
         # append frame to list by type
         bitrate_data[frame_type].append(frame)
+
+    if frame_bitrate != 0:
+    	frame = (frame_time, frame_bitrate)
+    	bitrate_data[frame_type].append(frame)    
 
     # check if ffprobe was successful
     if frame_count == 0:
@@ -229,13 +239,23 @@ for frame_type in ['I', 'P', 'B', 'A']:
 
     # update global mean bitrate (using piecewise mean)
     mean_bitrate = frame_array.mean(0)[1]
-    global_mean_bitrate += mean_bitrate * (len(frame_list) / frame_count)
+    global_mean_bitrate += mean_bitrate * (len(frame_list) / (frame_count / frame_rate))
 
     # plot chart using gnuplot-like impulses
-    matplot.vlines(
-        frame_array[:,0], [0], frame_array[:,1],
-        color=frame_type_color[frame_type],
-        label="{} Frames".format(frame_type))
+    # matplot.vlines(
+    #     frame_array[:,0] - 0.5, [0], frame_array[:,1],
+    #     color=frame_type_color[frame_type],
+    #     linewidth=1,
+    #     label="{} Frames".format(frame_type))
+
+frame_array = numpy.array(bitrate_data['P'])
+
+bar_width = 1
+
+opacity = 0.65
+
+rects = matplot.bar(frame_array[:,0] - 0.5, frame_array[:,1], bar_width,
+                alpha=opacity, color='r')
 
 # set y-axis limits if requested
 if args.min:
@@ -265,7 +285,7 @@ matplot.axhline(global_mean_bitrate, linewidth=2, color='black')
 matplot.text(mean_text_x, mean_text_y, mean_text,
     horizontalalignment='center', fontweight='bold', color='black')
 
-matplot.legend()
+# matplot.legend()
 
 # render graph to file (if requested) or screen
 if args.output:
